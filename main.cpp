@@ -8,7 +8,6 @@
 #include <string_view>
 #include <vector>
 
-
 using namespace std;
 using filesystem::path;
 namespace fs = std::filesystem;
@@ -110,10 +109,12 @@ bool Preprocess(const path& in_file, const path& out_file, const vector<path>& i
 
 	ifstream in_stream(in_file);
 	//Если файл не открылся
-	if (!in_stream)
+	if (!in_stream.is_open())
 		return false;
 	//Если файл открылся
 	ofstream out_stream(out_file);
+	if (!out_stream.is_open())
+		return false;
 	return RecursivePreprocess(in_stream, out_stream, in_file, include_directories);
 }
 
@@ -126,57 +127,35 @@ bool RecursivePreprocess(
 		return false;
 	}
 	string current_str;
-	smatch m;
+	smatch match_header;
+	smatch match_library;
 	int current_str_number = 0; //номер строки
-	bool is_empty = false;
-	while (!in.eof()) {
-		//выводим пустую строку, если она НЕ ПОСЛЕДНЯЯ в открытом файле
-		if (is_empty) {
-			out << current_str << endl;
-			is_empty = false;
-		}
+	while (getline(in, current_str)) {
 		current_str_number++;
-		current_str = ReadLine(in);
-
-		//если наткнулись на пустую строку
-		if (current_str.empty()){
-			is_empty = true;
-			continue;
-		}
-
-		//Ищем в текущей строке header
-		//#include "path/example.h"
-		if (bool regex_match_result = regex_match(current_str, m, header_reg);
-			regex_match_result == true) {
-			path include_path = p.parent_path() / string(m[1]); //путь к подключаемому файлу
-			if (!fs::exists(include_path)) { //если путь во вложенной папке
-				bool find_result = findInclude(string(m[1]), include_directories, include_path); 
-				if (find_result) {
-					ifstream lib_file(include_path);
-					RecursivePreprocess(lib_file, out, include_path, include_directories);
-				}
-				else {
-					cout << "unknown include file "s << string(m[1]) << " at file "s << p.string() << " at line "s << current_str_number << endl;
-					return false;
-				}
-			}
-			else { //если путь в текущей папке (в той, где лежит сам обрабатываемый файл)
-				ifstream h_file(include_path); //открываем файл на чтение
-				RecursivePreprocess(h_file, out, include_path, include_directories);
-			}
-		}
-		//Ищем в текущей строке library
-		//#include <example.h>
-		else if (bool regex_match_result = regex_match(current_str, m, library_reg);
-			regex_match_result == true) {
-			path include_path;
-			bool find_result = findInclude(string(m[1]), include_directories, include_path);
-			if (find_result) {
-				ifstream lib_file(include_path);
-				RecursivePreprocess(lib_file, out, include_path, include_directories);
+		if (regex_match(current_str, match_header, header_reg) ||
+			regex_match(current_str, match_library, library_reg)) {
+			ifstream include_file;
+			path relative_path;
+			path global_path;
+			if (!match_header.empty()) {
+				relative_path = string(match_header[1]);
+				global_path = p.parent_path() / relative_path;
 			}
 			else {
-				cout << "unknown include file "s << string(m[1]) << " at file "s << p.string() << " at line "s << current_str_number << endl;
+				relative_path = string(match_library[1]);
+			}
+
+			bool isIncludeExists = fs::exists(global_path);
+			if (!isIncludeExists) {
+				isIncludeExists = findInclude(relative_path.string(), include_directories, global_path);
+			}
+
+			if (isIncludeExists) {
+				ifstream lib_file(global_path);
+				RecursivePreprocess(lib_file, out, global_path, include_directories);
+			}
+			else {
+				cout << "unknown include file "s << relative_path.string() << " at file "s << p.string() << " at line "s << current_str_number << endl;
 				return false;
 			}
 		}
