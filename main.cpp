@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+
 using namespace std;
 using filesystem::path;
 namespace fs = std::filesystem;
@@ -23,11 +24,7 @@ bool Preprocess(const path&, const path&, const vector<path>&);
 
 bool RecursivePreprocess(ifstream&, ofstream&, const path&, const vector<path>&);
 
-bool findInclude(const string&, const vector<path>&, path& result);
-
 string GetFileContents(string);
-
-string ReadLine(istream&);
 
 void Test() {
 	error_code err;
@@ -145,14 +142,18 @@ bool RecursivePreprocess(
 				relative_path = string(match_library[1]);
 			}
 
-			bool isIncludeExists = fs::exists(global_path);
-			if (!isIncludeExists) {
-				isIncludeExists = findInclude(relative_path.string(), include_directories, global_path);
+			include_file.open(global_path);
+			if (!include_file.is_open()) {
+				for (const auto& item : include_directories) {
+					global_path = item / relative_path;
+					include_file.open(global_path);
+					if (include_file.is_open())
+						break;
+				}
 			}
 
-			if (isIncludeExists) {
-				ifstream lib_file(global_path);
-				RecursivePreprocess(lib_file, out, global_path, include_directories);
+			if (include_file.is_open()) {
+				RecursivePreprocess(include_file, out, global_path, include_directories);
 			}
 			else {
 				cout << "unknown include file "s << relative_path.string() << " at file "s << p.string() << " at line "s << current_str_number << endl;
@@ -165,25 +166,9 @@ bool RecursivePreprocess(
 	return true;
 }
 
-bool findInclude(const string& file_to_find, const vector<path>& include_directories, path& result) {
-	for (const auto& item : include_directories) {
-		result = item / file_to_find;
-		if (fs::exists(result))
-			return true;
-	}
-	result.clear();
-	return false;
-}
-
 string GetFileContents(string file) {
 	ifstream stream(file);
 
 	// конструируем string по двум итераторам
 	return { (istreambuf_iterator<char>(stream)), istreambuf_iterator<char>() };
-}
-
-string ReadLine(istream& stream) {
-	string s;
-	getline(stream, s);
-	return s;
 }
